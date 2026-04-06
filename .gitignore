@@ -90,3 +90,5 @@ lost_and_found/
 # .keep
 
 .aider*
+.beads/
+.agent-prompts/

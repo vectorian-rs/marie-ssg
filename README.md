@@ -253,3 +253,7 @@ See [agents](AGENTS.md)
 ### v0.1.0
 
 - Initial release with core SSG functionality
+
+## License
+
+MIT
