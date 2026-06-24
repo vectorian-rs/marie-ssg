@@ -1,6 +1,6 @@
 [package]
 name = "marie-ssg"
-version = "1.6.0"
+version = "1.7.0"
 edition = "2024"
 description = "A fast static site generator that converts markdown with TOML metadata into HTML"
 license = "MIT"
@@ -15,8 +15,6 @@ exclude = [
     ".venv/",
     "coverage/",
     "docs/",
-    "benches/",
-    "tests/",
     "AGENTS.md",
     "CLAUDE.md",
     "mise.toml",

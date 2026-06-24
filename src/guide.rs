@@ -150,6 +150,9 @@ Templates use Jinja2 syntax via the Minijinja library.
 **In content templates (`post.html`):**
 - `content` - Rendered HTML content
 - `meta.title`, `meta.date`, `meta.author`, `meta.tags`
+- `page.url` - Root-relative current page URL (e.g., `/blog/hello/`)
+- `page.filename` - Current page output path without leading slash
+- `page.permalink` / `page.canonical_url` - Absolute current page URL
 - `config.site.title`, `config.site.author`, etc.
 - `config.dynamic.github_url`, etc.
 
@@ -157,6 +160,7 @@ Templates use Jinja2 syntax via the Minijinja library.
 - `contents` - List of ContentItem for this content type
 - `all_content` - List of all ContentItem across all types
 - `config` - Full site configuration
+- `page.url`, `page.permalink`, `page.canonical_url` - Current index page URLs
 
 ### ContentItem Properties
 
@@ -181,6 +185,9 @@ Templates use Jinja2 syntax via the Minijinja library.
 | `item.meta.extra.*`   | Custom fields (e.g., `item.meta.extra.reading_time`) |
 | `item.formatted_date` | Human-readable date (e.g., "January 15, 2024")     |
 | `item.filename`       | Output path (e.g., `blog/hello/` with clean_urls)  |
+| `item.url`            | Root-relative URL path (e.g., `/blog/hello/`)      |
+| `item.permalink`      | Absolute URL                                       |
+| `item.canonical_url`  | Absolute canonical URL                             |
 | `item.content_type`   | Content type (e.g., "blog")                        |
 | `item.excerpt`        | HTML excerpt from "## Context" section             |
 

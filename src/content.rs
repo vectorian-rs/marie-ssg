@@ -76,6 +76,23 @@ pub(crate) struct ContentMeta {
     pub draft: bool,
 }
 
+/// Template-ready URL information for the current rendered page.
+///
+/// `url` is a root-relative URL path (for example, `/blog/post/`).
+/// `permalink` and `canonical_url` are absolute URLs and intentionally aliases,
+/// so templates can use either naming convention.
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct PageInfo {
+    /// Output path relative to the site root, without a leading slash.
+    pub(crate) filename: String,
+    /// Root-relative URL path, with a leading slash.
+    pub(crate) url: String,
+    /// Absolute URL for this page.
+    pub(crate) permalink: String,
+    /// Absolute canonical URL for this page.
+    pub(crate) canonical_url: String,
+}
+
 /// Processed content item ready for template rendering and output.
 ///
 /// This struct contains the fully processed content including converted HTML,
@@ -91,6 +108,12 @@ pub(crate) struct ContentItem {
     pub(crate) formatted_date: String,
     /// Output filename for this content piece
     pub(crate) filename: String,
+    /// Root-relative URL path for this content piece
+    pub(crate) url: String,
+    /// Absolute URL for this content piece
+    pub(crate) permalink: String,
+    /// Absolute canonical URL for this content piece
+    pub(crate) canonical_url: String,
     /// Content type category (e.g., "blog", "projects", "page")
     pub(crate) content_type: String,
     /// HTML excerpt extracted from the content

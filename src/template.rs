@@ -1,7 +1,8 @@
 // src/template.rs
 
-use minijinja::{Environment, State, Value, context, path_loader};
+use minijinja::{Environment, State, Value, path_loader};
 use minijinja_contrib::add_to_environment;
+use std::path::Path;
 use time::OffsetDateTime;
 use time::macros::format_description;
 use tracing::instrument;
@@ -9,7 +10,8 @@ use tracing::instrument;
 use crate::{
     asset_hash::AssetManifest,
     config::Config,
-    content::{ContentItem, ContentMeta, get_excerpt_html},
+    content::{ContentItem, ContentMeta, PageInfo, get_excerpt_html},
+    utils::{absolute_url, output_path_to_relative_url, output_path_to_url_path},
 };
 
 /// Format a date as "Month Day, Year" (e.g., "January 15, 2024")
@@ -91,28 +93,52 @@ pub(crate) fn create_environment_with_manifest(
     env
 }
 
+/// Build page URL information for a rendered output path.
+fn build_page_info_with_clean_urls(
+    output_path: &Path,
+    config: &Config,
+    clean_urls: bool,
+) -> PageInfo {
+    let filename = output_path_to_relative_url(output_path, &config.site.output_dir, clean_urls);
+    let url = output_path_to_url_path(output_path, &config.site.output_dir, clean_urls);
+    let canonical_url = absolute_url(&config.site.domain, &url);
+
+    PageInfo {
+        filename,
+        url,
+        permalink: canonical_url.clone(),
+        canonical_url,
+    }
+}
+
+fn build_page_info(output_path: &Path, config: &Config) -> PageInfo {
+    build_page_info_with_clean_urls(output_path, config, config.site.clean_urls)
+}
+
+fn build_index_page_info(output_path: &Path, config: &Config) -> PageInfo {
+    // Index templates are always public directory URLs: /, /blog/, etc.
+    build_page_info_with_clean_urls(output_path, config, true)
+}
+
+/// Build a MiniJinja page object whose URL fields are marked safe for attributes.
+fn build_page_value(page: &PageInfo) -> Value {
+    Value::from_iter([
+        ("filename", Value::from_safe_string(page.filename.clone())),
+        ("url", Value::from_safe_string(page.url.clone())),
+        ("permalink", Value::from_safe_string(page.permalink.clone())),
+        (
+            "canonical_url",
+            Value::from_safe_string(page.canonical_url.clone()),
+        ),
+    ])
+}
+
 /// Build a ContentItem from LoadedContent for template rendering.
 ///
 /// This helper extracts the common logic for building template-ready content items,
-/// computing the filename, excerpt, and formatted date.
+/// computing URL information, excerpt, and formatted date.
 fn build_content_item(lc: &crate::LoadedContent, config: &Config) -> ContentItem {
-    let raw_filename = lc
-        .output_path
-        .strip_prefix(&config.site.output_dir)
-        .unwrap_or(&lc.output_path)
-        .to_string_lossy()
-        .to_string();
-
-    // For clean URLs, convert "content-type/slug/index.html" to "content-type/slug/"
-    let filename = if config.site.clean_urls {
-        raw_filename
-            .strip_suffix("/index.html")
-            .or_else(|| raw_filename.strip_suffix("\\index.html")) // Windows support
-            .map(|s| format!("{}/", s))
-            .unwrap_or(raw_filename)
-    } else {
-        raw_filename
-    };
+    let page = build_page_info(&lc.output_path, config);
 
     let excerpt = get_excerpt_html(
         &lc.content.data,
@@ -124,12 +150,16 @@ fn build_content_item(lc: &crate::LoadedContent, config: &Config) -> ContentItem
         html: lc.html.clone(),
         meta: lc.content.meta.clone(),
         formatted_date: format_date_long(&lc.content.meta.date),
-        filename,
+        filename: page.filename,
+        url: page.url,
+        permalink: page.permalink,
+        canonical_url: page.canonical_url,
         content_type: lc.content_type.clone(),
         excerpt,
     }
 }
 
+#[cfg(test)]
 #[instrument(skip_all)]
 pub(crate) fn render_index_from_loaded(
     env: &Environment,
@@ -137,6 +167,36 @@ pub(crate) fn render_index_from_loaded(
     index_template_name: &str,
     loaded: Vec<&crate::LoadedContent>,
     all_content: Vec<&crate::LoadedContent>,
+) -> Result<String, minijinja::Error> {
+    render_index_from_loaded_impl(env, config, index_template_name, loaded, all_content, None)
+}
+
+#[instrument(skip_all)]
+pub(crate) fn render_index_from_loaded_with_page(
+    env: &Environment,
+    config: &Config,
+    index_template_name: &str,
+    loaded: Vec<&crate::LoadedContent>,
+    all_content: Vec<&crate::LoadedContent>,
+    page_output_path: &Path,
+) -> Result<String, minijinja::Error> {
+    render_index_from_loaded_impl(
+        env,
+        config,
+        index_template_name,
+        loaded,
+        all_content,
+        Some(page_output_path),
+    )
+}
+
+fn render_index_from_loaded_impl(
+    env: &Environment,
+    config: &Config,
+    index_template_name: &str,
+    loaded: Vec<&crate::LoadedContent>,
+    all_content: Vec<&crate::LoadedContent>,
+    page_output_path: Option<&Path>,
 ) -> Result<String, minijinja::Error> {
     let tmpl = env.get_template(index_template_name)?;
 
@@ -152,11 +212,16 @@ pub(crate) fn render_index_from_loaded(
         .collect();
     all_contents.sort_by(|a, b| b.meta.date.cmp(&a.meta.date));
 
-    let context = context! {
-        config => config,
-        contents => contents,
-        all_content => all_contents,
-    };
+    let page = page_output_path
+        .map(|path| build_page_value(&build_index_page_info(path, config)))
+        .unwrap_or(Value::UNDEFINED);
+
+    let context = Value::from_iter([
+        ("config", Value::from_serialize(config)),
+        ("contents", Value::from_serialize(&contents)),
+        ("all_content", Value::from_serialize(&all_contents)),
+        ("page", page),
+    ]);
 
     tmpl.render(context)
 }
@@ -168,14 +233,17 @@ pub(crate) fn render_html(
     meta: &ContentMeta,
     config: &Config,
     content_template: &str,
+    output_path: &Path,
 ) -> Result<String, minijinja::Error> {
     let tmpl = env.get_template(content_template)?;
+    let page = build_page_info(output_path, config);
 
-    let context = context! {
-        content => html,
-        meta => meta,
-        config => config
-    };
+    let context = Value::from_iter([
+        ("content", Value::from(html)),
+        ("meta", Value::from_serialize(meta)),
+        ("config", Value::from_serialize(config)),
+        ("page", build_page_value(&page)),
+    ]);
 
     tmpl.render(context)
 }
@@ -264,7 +332,14 @@ mod tests {
         // Test rendering
         let meta = create_test_meta();
         let html = "<p>Test content</p>";
-        let result = render_html(&env, html, &meta, &config, "test.html");
+        let result = render_html(
+            &env,
+            html,
+            &meta,
+            &config,
+            "test.html",
+            &PathBuf::from("output/blog/test.html"),
+        );
 
         assert!(result.is_ok());
         let rendered = result.unwrap();
@@ -294,13 +369,127 @@ mod tests {
         let config = create_test_config(temp_dir.path().to_str().unwrap(), "output");
 
         let meta = create_test_meta();
-        let result = render_html(&env, "<p>Body</p>", &meta, &config, "full.html");
+        let result = render_html(
+            &env,
+            "<p>Body</p>",
+            &meta,
+            &config,
+            "full.html",
+            &PathBuf::from("output/blog/test.html"),
+        );
 
         assert!(result.is_ok());
         let rendered = result.unwrap();
         assert!(rendered.contains("Test Article"));
         assert!(rendered.contains("Test Author"));
         assert!(rendered.contains("rust, testing"));
+    }
+
+    #[test]
+    fn test_render_html_exposes_page_url_fields() {
+        let temp_dir = TempDir::new().unwrap();
+        let template_path = temp_dir.path().join("page.html");
+
+        std::fs::write(
+            &template_path,
+            r#"<link rel="canonical" href="{{ page.canonical_url }}">
+<meta property="og:url" content="{{ page.permalink }}">
+<span data-url="{{ page.url }}" data-filename="{{ page.filename }}"></span>"#,
+        )
+        .unwrap();
+
+        let mut env = Environment::new();
+        env.set_loader(path_loader(temp_dir.path()));
+        let config = create_test_config(temp_dir.path().to_str().unwrap(), "output");
+        let meta = create_test_meta();
+
+        let rendered = render_html(
+            &env,
+            "<p>Body</p>",
+            &meta,
+            &config,
+            "page.html",
+            &PathBuf::from("output/blog/test.html"),
+        )
+        .unwrap();
+
+        assert!(rendered.contains(r#"href="https://example.com/blog/test.html""#));
+        assert!(rendered.contains(r#"content="https://example.com/blog/test.html""#));
+        assert!(rendered.contains(r#"data-url="/blog/test.html""#));
+        assert!(rendered.contains(r#"data-filename="blog/test.html""#));
+        assert!(
+            !rendered.contains("&#x2f;"),
+            "URL fields should render safely: {rendered}"
+        );
+    }
+
+    #[test]
+    fn test_render_html_exposes_clean_page_url_fields() {
+        let temp_dir = TempDir::new().unwrap();
+        let template_path = temp_dir.path().join("page.html");
+        std::fs::write(
+            &template_path,
+            "{{ page.url }}|{{ page.filename }}|{{ page.canonical_url }}",
+        )
+        .unwrap();
+
+        let mut env = Environment::new();
+        env.set_loader(path_loader(temp_dir.path()));
+        let mut config = create_test_config(temp_dir.path().to_str().unwrap(), "output");
+        config.site.clean_urls = true;
+        let meta = create_test_meta();
+
+        let rendered = render_html(
+            &env,
+            "<p>Body</p>",
+            &meta,
+            &config,
+            "page.html",
+            &PathBuf::from("output/blog/test/index.html"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            rendered,
+            "/blog/test/|blog/test/|https://example.com/blog/test/"
+        );
+    }
+
+    #[test]
+    fn test_render_index_exposes_directory_page_url_fields() {
+        let temp_dir = TempDir::new().unwrap();
+        let template_path = temp_dir.path().join("index.html");
+        std::fs::write(
+            &template_path,
+            "{{ page.url }}|{{ page.filename }}|{{ page.canonical_url }}",
+        )
+        .unwrap();
+
+        let mut env = Environment::new();
+        env.set_loader(path_loader(temp_dir.path()));
+        let config = create_test_config(temp_dir.path().to_str().unwrap(), "output");
+
+        let content_type_index = render_index_from_loaded_with_page(
+            &env,
+            &config,
+            "index.html",
+            vec![],
+            vec![],
+            &PathBuf::from("output/blog/index.html"),
+        )
+        .unwrap();
+        assert_eq!(content_type_index, "/blog/|blog/|https://example.com/blog/");
+
+        let site_index = render_index_from_loaded_with_page(
+            &env,
+            &config,
+            "index.html",
+            vec![],
+            vec![],
+            &PathBuf::from("output/index.html"),
+        )
+        .unwrap();
+        assert_eq!(site_index, "/||https://example.com/");
     }
 
     #[test]
@@ -317,7 +506,14 @@ mod tests {
         let config = create_test_config(temp_dir.path().to_str().unwrap(), "output");
 
         let meta = create_test_meta();
-        let result = render_html(&env, "<p>Body</p>", &meta, &config, "date.html");
+        let result = render_html(
+            &env,
+            "<p>Body</p>",
+            &meta,
+            &config,
+            "date.html",
+            &PathBuf::from("output/blog/test.html"),
+        );
 
         let rendered = result.expect("datetimeformat filter should render");
         assert!(rendered.contains("Jan 15 2024"));
@@ -332,7 +528,14 @@ mod tests {
         let config = create_test_config(temp_dir.path().to_str().unwrap(), "output");
 
         let meta = create_test_meta();
-        let result = render_html(&env, "<p>Test</p>", &meta, &config, "nonexistent.html");
+        let result = render_html(
+            &env,
+            "<p>Test</p>",
+            &meta,
+            &config,
+            "nonexistent.html",
+            &PathBuf::from("output/blog/test.html"),
+        );
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("nonexistent.html"));

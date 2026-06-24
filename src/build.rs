@@ -9,7 +9,9 @@ use crate::config::Config;
 use crate::content::{Content, convert_content_with_highlighting, load_content};
 use crate::error::RunError;
 use crate::output::{copy_static_files, write_output_file};
-use crate::template::{create_environment_with_manifest, render_html, render_index_from_loaded};
+use crate::template::{
+    create_environment_with_manifest, render_html, render_index_from_loaded_with_page,
+};
 use crate::utils::{
     build_output_path, find_markdown_files, get_content_type, get_content_type_template,
     resolve_url_pattern,
@@ -216,6 +218,7 @@ fn run_build(
             &loaded.content.meta,
             config,
             &content_template,
+            &loaded.output_path,
         )?;
         write_output_file(&loaded.output_path, &rendered)?;
     }
@@ -230,32 +233,32 @@ fn run_build(
             .filter(|lc| &lc.content_type == content_type)
             .collect();
 
-        let index_rendered = render_index_from_loaded(
+        let output_path = PathBuf::from(&config.site.output_dir)
+            .join(content_type)
+            .join("index.html");
+
+        let index_rendered = render_index_from_loaded_with_page(
             env,
             config,
             &v.index_template,
             filtered,
             loaded_contents.iter().collect(),
+            &output_path,
         )?;
-
-        let output_path = PathBuf::from(&config.site.output_dir)
-            .join(content_type)
-            .join("index.html");
-
         write_output_file(&output_path, &index_rendered)?;
     }
 
     // 5. Render site index
     //
-    let site_index_rendered = render_index_from_loaded(
+    let site_index_path = PathBuf::from(&config.site.output_dir).join("index.html");
+    let site_index_rendered = render_index_from_loaded_with_page(
         env,
         config,
         &config.site.site_index_template,
         loaded_contents.iter().collect(),
         loaded_contents.iter().collect(),
+        &site_index_path,
     )?;
-
-    let site_index_path = PathBuf::from(&config.site.output_dir).join("index.html");
     info!("index::render site → {}", site_index_path.display());
     write_output_file(&site_index_path, &site_index_rendered)?;
 
@@ -399,6 +402,7 @@ fn run_build_with_spans(
             &loaded.content.meta,
             config,
             &content_template,
+            &loaded.output_path,
         )?;
         write_output_file(&loaded.output_path, &rendered)?;
     }
@@ -416,32 +420,33 @@ fn run_build_with_spans(
             .filter(|lc| &lc.content_type == content_type)
             .collect();
 
-        let index_rendered = render_index_from_loaded(
+        let output_path = PathBuf::from(&config.site.output_dir)
+            .join(content_type)
+            .join("index.html");
+
+        let index_rendered = render_index_from_loaded_with_page(
             env,
             config,
             &v.index_template,
             filtered,
             loaded_contents.iter().collect(),
+            &output_path,
         )?;
-
-        let output_path = PathBuf::from(&config.site.output_dir)
-            .join(content_type)
-            .join("index.html");
-
         write_output_file(&output_path, &index_rendered)?;
     }
     drop(_index_span);
 
     // 5. Render site index
     let _site_index_span = tracing::info_span!("render_site_index").entered();
-    let site_index_rendered = render_index_from_loaded(
+    let site_index_path = PathBuf::from(&config.site.output_dir).join("index.html");
+    let site_index_rendered = render_index_from_loaded_with_page(
         env,
         config,
         &config.site.site_index_template,
         loaded_contents.iter().collect(),
         loaded_contents.iter().collect(),
+        &site_index_path,
     )?;
-    let site_index_path = PathBuf::from(&config.site.output_dir).join("index.html");
     write_output_file(&site_index_path, &site_index_rendered)?;
     drop(_site_index_span);
 

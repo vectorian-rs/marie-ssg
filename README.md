@@ -133,6 +133,20 @@ See [agents](AGENTS.md)
 
 ## Version History
 
+### v1.7.0 (2026-06-24)
+
+- Added first-class current page URL context for templates
+  - `page.url`, `page.filename`, `page.permalink`, `page.canonical_url`
+  - Enables direct canonical and Open Graph URL tags in shared head templates
+- Added URL fields to index content items
+  - `item.url`, `item.permalink`, `item.canonical_url`
+- Index templates now receive current page URL context
+- Sitemap URL generation now shares canonical URL path logic
+
+### v1.6.0 (2026-03-13)
+
+- Added full content RSS support and RSS best practices
+
 ### v1.5.0 (2026-01-13)
 
 - Added draft content support

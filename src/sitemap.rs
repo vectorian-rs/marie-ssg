@@ -1,11 +1,13 @@
 // src/sitemap.rs
 
+#[cfg(test)]
 use std::path::Path;
 use time::OffsetDateTime;
 use time::macros::format_description;
 
 use crate::LoadedContent;
 use crate::config::Config;
+use crate::utils::{output_path_to_url_path, site_base_url};
 
 /// Generates a sitemap.xml string following the sitemap protocol.
 ///
@@ -33,7 +35,7 @@ pub(crate) fn generate_sitemap(config: &Config, loaded_contents: &[LoadedContent
     xml.push_str(r#"<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">"#);
     xml.push('\n');
 
-    let base_url = format!("https://{}", config.site.domain);
+    let base_url = site_base_url(&config.site.domain);
 
     // Add site index (homepage)
     xml.push_str(&format_url_entry(&base_url, "/", None));
@@ -46,26 +48,11 @@ pub(crate) fn generate_sitemap(config: &Config, loaded_contents: &[LoadedContent
 
     // Add all content pages
     for content in loaded_contents {
-        let relative_path = content
-            .output_path
-            .strip_prefix(&config.site.output_dir)
-            .unwrap_or(&content.output_path);
-
-        let raw_path = path_to_url(relative_path);
-
-        // For clean URLs, convert "slug/index.html" to "slug/"
-        let path = if config.site.clean_urls {
-            format!(
-                "/{}",
-                raw_path
-                    .strip_suffix("/index.html")
-                    .or_else(|| raw_path.strip_suffix("\\index.html"))
-                    .map(|s| format!("{}/", s))
-                    .unwrap_or(raw_path)
-            )
-        } else {
-            format!("/{}", raw_path)
-        };
+        let path = output_path_to_url_path(
+            &content.output_path,
+            &config.site.output_dir,
+            config.site.clean_urls,
+        );
 
         let lastmod = Some(&content.content.meta.date);
 
@@ -100,6 +87,7 @@ fn format_url_entry(base_url: &str, path: &str, lastmod: Option<&OffsetDateTime>
 /// Converts a file path to a URL path.
 ///
 /// Handles platform-specific path separators and ensures forward slashes.
+#[cfg(test)]
 fn path_to_url(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }

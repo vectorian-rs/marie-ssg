@@ -391,6 +391,73 @@ pub(crate) fn build_output_path(
     }
 }
 
+/// Converts an output path to a site-root-relative URL path without a leading slash.
+///
+/// For clean URLs, `blog/post/index.html` becomes `blog/post/`. Otherwise the
+/// HTML filename is preserved, for example `blog/post.html`.
+pub(crate) fn output_path_to_relative_url(
+    output_path: &Path,
+    output_dir: &str,
+    clean_urls: bool,
+) -> String {
+    let relative_path = output_path.strip_prefix(output_dir).unwrap_or(output_path);
+
+    let raw_path = relative_path.to_string_lossy().replace('\\', "/");
+
+    if clean_urls {
+        if raw_path == "index.html" {
+            return String::new();
+        }
+
+        raw_path
+            .strip_suffix("/index.html")
+            .map(|s| format!("{}/", s))
+            .unwrap_or(raw_path)
+    } else {
+        raw_path
+    }
+}
+
+/// Converts an output path to a root-relative URL path with a leading slash.
+pub(crate) fn output_path_to_url_path(
+    output_path: &Path,
+    output_dir: &str,
+    clean_urls: bool,
+) -> String {
+    let relative = output_path_to_relative_url(output_path, output_dir, clean_urls);
+
+    if relative.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{}", relative.trim_start_matches('/'))
+    }
+}
+
+/// Returns the site's absolute base URL from a configured domain.
+pub(crate) fn site_base_url(domain: &str) -> String {
+    let trimmed = domain.trim().trim_end_matches('/');
+
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else {
+        format!("https://{}", trimmed)
+    }
+}
+
+/// Builds an absolute URL for a root-relative path.
+pub(crate) fn absolute_url(domain: &str, path: &str) -> String {
+    let base = site_base_url(domain);
+    let path = if path.is_empty() {
+        "/"
+    } else if path.starts_with('/') {
+        path
+    } else {
+        return format!("{}/{}", base, path);
+    };
+
+    format!("{}{}", base, path)
+}
+
 /// Retrieves the template path for a specific content type from the configuration.
 ///
 /// This function looks up the configured template for a given content type in the

@@ -69,14 +69,16 @@ Templates receive variables from multiple sources that can be used with Jinja-st
 ### Available in All Templates
 
 - `{{ meta.title }}`, `{{ meta.date }}`, `{{ meta.author }}` — from meta.toml
-- `{{ content | safe }}` — rendered HTML from .md file
-- `{{ excerpt }}` — extracted from `## Context` section
+- `{{ content | safe }}` — rendered HTML from .md file (content templates)
+- `{{ page.url }}` — root-relative current page URL, such as `/blog/post/`
+- `{{ page.permalink }}` / `{{ page.canonical_url }}` — absolute current page URL for canonical and Open Graph tags
 - `{{ config.site.* }}` — site configuration values
 
 ### Additional for Index Templates
 
 - `{{ contents }}` — list of items for this content type
 - `{{ all_content }}` — list of all content items across all types
+- each item includes `filename`, `url`, `permalink`, and `canonical_url`
 
 ### Template Filters
 
